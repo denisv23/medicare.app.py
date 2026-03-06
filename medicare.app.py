@@ -3,6 +3,9 @@ import sqlite3
 import hashlib
 from datetime import datetime
 
+# ==========================================
+# 1. MENAXHIMI I DATABAZËS DHE SIGURISË
+# ==========================================
 class DatabaseManager:
     def __init__(self, db_name='clinic_data.db'):
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
@@ -10,8 +13,10 @@ class DatabaseManager:
 
     def create_tables(self):
         c = self.conn.cursor()
+        # Tabela e përdoruesve me fjalëkalime të enkriptuara
         c.execute('''CREATE TABLE IF NOT EXISTS users 
                      (username TEXT PRIMARY KEY, password TEXT, role TEXT)''')
+        # Tabela e takimeve e lidhur me përdoruesin
         c.execute('''CREATE TABLE IF NOT EXISTS appointments 
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                       username TEXT, date TEXT, time TEXT)''')
@@ -28,7 +33,7 @@ class DatabaseManager:
             self.conn.commit()
             return True
         except sqlite3.IntegrityError:
-            return False 
+            return False # Përdoruesi ekziston
 
     def login_user(self, username, password):
         c = self.conn.cursor()
@@ -47,6 +52,15 @@ class DatabaseManager:
         c.execute("SELECT date, time FROM appointments WHERE username=?", (username,))
         return c.fetchall()
 
+    # SHTUAR: Funksioni për të marrë të gjitha takimet për mjekun
+    def get_all_appointments(self):
+        c = self.conn.cursor()
+        c.execute("SELECT username, date, time FROM appointments ORDER BY date DESC")
+        return c.fetchall()
+
+# ==========================================
+# 2. LOGJIKA MJEKËSORE (AI MOCK)
+# ==========================================
 class MedicalLogic:
     def __init__(self):
         self.symptom_rules = {
@@ -62,20 +76,25 @@ class MedicalLogic:
                 possible_conditions.update(self.symptom_rules[symptom])
         return possible_conditions
 
-
+# ==========================================
+# 3. NDËRFAQJA E PËRDORUESIT (UI)
+# ==========================================
+# Konfigurimi i faqes
 st.set_page_config(page_title="MediCare AI Clinic", page_icon="🏥", layout="centered")
 
+# Inicializimi i klasave
 db = DatabaseManager()
 medical_ai = MedicalLogic()
 
+# Menaxhimi i Sesionit (Qëndrimi i loguar)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'username' not in st.session_state:
     st.session_state['username'] = ''
 
-
+# --- SHIRITI ANËSOR: LOGIN / REGISTER ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2966/2966327.png", width=100) 
+    st.image("https://cdn-icons-png.flaticon.com/512/2966/2966327.png", width=100) # Ikonë gjenerike mjekësore
     st.title("MediCare Portal")
     
     if not st.session_state['logged_in']:
@@ -108,45 +127,62 @@ with st.sidebar:
             st.session_state['username'] = ''
             st.rerun()
 
+# --- FAQJA KRYESORE (VETËM PËR TË LOGUARIT) ---
 if st.session_state['logged_in']:
-    st.title("🏥 Portali i Pacientit")
-    st.markdown("---")
     
-    tab1, tab2, tab3 = st.tabs(["🩺 Kontrolli i Simptomave", "📅 Rezervo Takim", "📋 Takimet e mia"])
-    
-    with tab1:
-        st.header("Kontrolli i Simptomave")
-        st.info("⚠️ **Kujdes:** Ky mjet ofron vetëm sugjerime fillestare dhe nuk zëvendëson diagnostikimin nga një mjek profesionist.")
-        symptoms = st.text_input("Shkruaj simptomat (të ndara me presje, p.sh: ethe, kolle):")
-        if st.button("Analizo"):
-            if symptoms:
-                symptoms_list = [sym.strip().lower() for sym in symptoms.split(',')]
-                conditions = medical_ai.check_symptoms(symptoms_list)
-                if conditions:
-                    st.warning("Sëmundje të mundshme (Këshillohuni me mjekun):")
-                    for cond in conditions:
-                        st.write(f"- {cond}")
-                else:
-                    st.success("Nuk u gjetën të dhëna për këto simptoma në sistemin tonë.")
-            else:
-                st.error("Ju lutem shkruani një simptomë.")
-
-    with tab2:
-        st.header("Rezervo një Takim")
-        date = st.date_input("Zgjidhni datën:", min_value=datetime.today())
-        time = st.time_input("Zgjidhni orën:")
-        if st.button("Konfirmo Takimin"):
-            db.book_appointment(st.session_state['username'], str(date), str(time))
-            st.success(f"Takimi u rezervua me sukses për datën {date} në orën {time}.")
-
-    with tab3:
-        st.header("Takimet e tua të ardhshme")
-        appointments = db.get_appointments(st.session_state['username'])
-        if appointments:
-            for idx, appt in enumerate(appointments):
-                st.write(f"**Takimi {idx+1}:** Data: `{appt[0]}` | Ora: `{appt[1]}`")
+    # SHTUAR: Kontrolli nëse përdoruesi është Mjeku (Admin)
+    if st.session_state['username'].lower() == "admin":
+        st.title("👨‍⚕️ Paneli i Kontrollit të Mjekut")
+        st.markdown("---")
+        st.subheader("Të gjitha takimet e rezervuara")
+        
+        all_appts = db.get_all_appointments()
+        
+        if all_appts:
+            for idx, appt in enumerate(all_appts):
+                st.info(f"👤 **Pacienti:** `{appt[0]}` | 📅 **Data:** `{appt[1]}` | ⏰ **Ora:** `{appt[2]}`")
         else:
-            st.write("Nuk keni asnjë takim të rezervuar.")
-else:
+            st.warning("Nuk ka asnjë takim të planifikuar ende.")
+            
+    # PORTALI I PACIENTIT (Për të gjithë përdoruesit e tjerë)
+    else:
+        st.title("🏥 Portali i Pacientit")
+        st.markdown("---")
+        
+        tab1, tab2, tab3 = st.tabs(["🩺 Kontrolli i Simptomave", "📅 Rezervo Takim", "📋 Takimet e mia"])
+        
+        with tab1:
+            st.header("Kontrolli i Simptomave")
+            st.info("⚠️ **Kujdes:** Ky mjet ofron vetëm sugjerime fillestare dhe nuk zëvendëson diagnostikimin nga një mjek profesionist.")
+            symptoms = st.text_input("Shkruaj simptomat (të ndara me presje, p.sh: ethe, kolle):")
+            if st.button("Analizo"):
+                if symptoms:
+                    symptoms_list = [sym.strip().lower() for sym in symptoms.split(',')]
+                    conditions = medical_ai.check_symptoms(symptoms_list)
+                    if conditions:
+                        st.warning("Sëmundje të mundshme (Këshillohuni me mjekun):")
+                        for cond in conditions:
+                            st.write(f"- {cond}")
+                    else:
+                        st.success("Nuk u gjetën të dhëna për këto simptoma në sistemin tonë.")
+                else:
+                    st.error("Ju lutem shkruani një simptomë.")
 
+        with tab2:
+            st.header("Rezervo një Takim")
+            date = st.date_input("Zgjidhni datën:", min_value=datetime.today())
+            time = st.time_input("Zgjidhni orën:")
+            if st.button("Konfirmo Takimin"):
+                db.book_appointment(st.session_state['username'], str(date), str(time))
+                st.success(f"Takimi u rezervua me sukses për datën {date} në orën {time}.")
+
+        with tab3:
+            st.header("Takimet e tua të ardhshme")
+            appointments = db.get_appointments(st.session_state['username'])
+            if appointments:
+                for idx, appt in enumerate(appointments):
+                    st.write(f"**Takimi {idx+1}:** Data: `{appt[0]}` | Ora: `{appt[1]}`")
+            else:
+                st.write("Nuk keni asnjë takim të rezervuar.")
+else:
     st.warning("👈 Ju lutem, identifikohuni ose krijoni një llogari në menunë anësore për të përdorur sistemin.")
